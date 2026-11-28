@@ -199,6 +199,9 @@ export default function Planner() {
    */
   function addCourse(course: Course, sectionId?: number) {
     if (!choices(course).length) return setNotice(`${course.code} has no sections this semester.`)
+    // A cross-listed class is one class: don't add the HIST copy when the AMST copy is already on.
+    const twin = scheduled.find((s) => s.course.id !== course.id && course.cross_listed.includes(s.course.code))
+    if (twin) return setNotice(`${course.code} is already on your schedule as ${twin.course.code}.`)
     setPickCourseId(null); setPreviewCourse(null)
     const onSchedule = (c: Course) => c.sections.some((s) => sectionIds.includes(s.id))
     const labSteps = (labs.labsOf.get(course.id) ?? []).filter((l) => choices(l).length && !onSchedule(l))

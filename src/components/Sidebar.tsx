@@ -6,6 +6,7 @@ import { darken } from '../lib/theme'
 import type { Course, Section, SectionWithCourse } from '../lib/types'
 import { ChevronsDownIcon, MinusIcon, PlusIcon, ShareIcon } from './Icons'
 import { FilterSummary, FiltersButton, type BrowseOption } from './FiltersPanel'
+import { crossListings, oneListingEach } from '../lib/crossListing'
 import { ASK_THE_PROFESSOR, CLASS_YEARS, openToMe, type ClassYear } from '../lib/classYear'
 
 /** A course card: the class plus its lab (`courseIds` lists both), in one color. */
@@ -57,6 +58,11 @@ export default function Sidebar(p: Props) {
   const savedIds = useMemo(() => new Set(p.saved.flatMap((s) => s.courseIds)), [p.saved])
   const labsOf = (c: Course) => p.labs.labsOf.get(c.id) ?? []
 
+  // A cross-listed course is stored once per department (HIST 123 and AMST 123, same class and
+  // time). The list shows it once, as the department being searched, and adds only that copy.
+  const otherListings = useMemo(() => crossListings(p.courses), [p.courses])
+  const listedAs = (c: Course) => [c.code, ...c.cross_listed.filter((x) => x !== c.code)]
+
   // Browse lists: every subject (named after its department) and every professor this semester, with course counts.
   const browse = useMemo(() => {
     const subj = new Map<string, { names: Map<string, number>; courses: Set<number> }>()
@@ -106,6 +112,8 @@ export default function Sidebar(p: Props) {
     const results = p.courses.filter((c) => {
       // Labs that belong to a class are shown inside that class's card, not on their own.
       if (savedIds.has(c.id) || p.labs.classesOf.has(c.id)) return false
+      // Already on the schedule under another department.
+      if ((otherListings.get(c.id) ?? []).some((o) => savedIds.has(o.id))) return false
       const labs = p.labs.labsOf.get(c.id) ?? []
       if (q && !matches(c, labs, q)) return false
       if (!matchesCourse(c, filters)) return false
@@ -116,8 +124,8 @@ export default function Sidebar(p: Props) {
       if (!secs.some((s) => fits(s) && openToMe(s.comments, p.classYear))) { hiddenByYear++; return false }
       return true
     })
-    return { results, hiddenByYear }
-  }, [query, p.courses, p.scheduled, p.labs, p.classYear, savedIds, filters, anyFilter])
+    return { results: oneListingEach(results, otherListings, q, filters.subjects), hiddenByYear }
+  }, [query, p.courses, p.scheduled, p.labs, p.classYear, savedIds, filters, anyFilter, otherListings])
   const yearPlural = CLASS_YEARS.find((y) => y.id === p.classYear)?.plural
 
   const firstSectionId = (c: Course) => (available(c)[0] ?? c.sections[0])?.id
@@ -133,7 +141,7 @@ export default function Sidebar(p: Props) {
         <input type="search" placeholder="Search..." value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search courses" />
         <FiltersButton filters={chosen} onChange={setFilters} onHover={setHovered} classYear={p.classYear} onClassYear={p.onClassYear} subjects={browse.subjects} professors={browse.professors} />
       </div>
-      <FilterSummary filters={chosen} onChange={setFilters} subjects={browse.subjects} />
+      <FilterSummary filters={chosen} onChange={setFilters} subjects={browse.subjects} classYear={p.classYear} onClassYear={p.onClassYear} />
 
       <div className="side-head">
         <h3>0 Custom Events</h3>
@@ -153,7 +161,7 @@ export default function Sidebar(p: Props) {
             <li key={course.id} className="card saved" style={{ background: color, borderLeftColor: darken(color) }}>
               <div className="card-main">
                 <button className="card-body" onClick={() => p.onDetails(sections[0]?.id ?? firstSectionId(course)!)} aria-label={`${course.code} details`}>
-                  <span className="card-code">{[course.code, ...course.cross_listed].join(' / ')}</span>
+                  <span className="card-code">{course.code}</span>
                   <span className="card-title">{course.title}</span>
                   <LabNote labs={[...new Map(sections.filter((s) => s.course.id !== course.id).map((s) => [s.course.id, s.course])).values()]} />
                 </button>
@@ -177,8 +185,9 @@ export default function Sidebar(p: Props) {
                   onMouseEnter={() => p.onPreview(course)} onMouseLeave={() => p.onPreview(null)}>
                   <div className="card-main">
                     <button className="card-body" onClick={() => { p.onPreview(null); p.onDetails(firstSectionId(course)!) }} aria-label={`${course.code} details`}>
-                      <span className="card-code">{[course.code, ...course.cross_listed].join(' / ')}</span>
+                      <span className="card-code">{course.code}</span>
                       <span className="card-title">{course.title}</span>
+                      {listedAs(course).length > 1 && <span className="card-lab">Also listed as {listedAs(course).slice(1).join(', ')}</span>}
                       <LabNote labs={labsOf(course)} />
                     </button>
                     <button className="card-act" onClick={() => { p.onPreview(null); p.onAdd(course) }} disabled={!p.canEdit} aria-label={`Add ${course.code}`}>

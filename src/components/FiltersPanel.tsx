@@ -203,9 +203,13 @@ export function FiltersButton({ filters: f, onChange, subjects, professors, onHo
 }
 
 /** One line under the search box listing the filters that are on, each removable. */
-export function FilterSummary({ filters: f, onChange, subjects }: Props & { subjects: BrowseOption[] }) {
+export function FilterSummary({ filters: f, onChange, subjects, classYear, onClassYear }: Props & {
+  subjects: BrowseOption[]; classYear: ClassYear | null; onClassYear: (y: ClassYear | null) => void
+}) {
   const items: { key: string; label: string; remove: () => void }[] = []
   const set = (over: Partial<SearchFilters>) => onChange({ ...f, ...over })
+  const year = CLASS_YEARS.find((y) => y.id === classYear)
+  if (year) items.push({ key: 'year', label: `Open to ${year.plural}`, remove: () => onClassYear(null) })
   for (const s of f.subjects) items.push({ key: `s${s}`, label: subjects.find((o) => o.id === s)?.label ?? s, remove: () => set({ subjects: toggle(f.subjects, s) }) })
   for (const name of f.professors) items.push({ key: `p${name}`, label: name, remove: () => set({ professors: toggle(f.professors, name) }) })
   if (f.days.size) items.push({ key: 'days', label: `Only ${WEEKDAYS.filter((d) => f.days.has(d)).map((d) => SHORT_DAY[d]).join(' ')}`, remove: () => set({ days: new Set() }) })

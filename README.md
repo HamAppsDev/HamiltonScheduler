@@ -106,7 +106,13 @@ is filled in), and saves nothing until both are picked. Class and lab share one 
 note ("Open to Srs., Jrs. & Sophomores", "Open to First Years only"): `src/lib/classYear.ts` reads the common
 phrasings and ignores "Not open to …" and "by permission". Search hides courses with no section open to the
 student's year, section picking leaves those sections out, and each place says so with a tip to email the
-professor. A section whose note states no year limit is open to everyone.
+professor. A section whose note states no year limit is open to everyone. The chosen year also shows as a
+removable chip under the search box.
+
+**Cross-listed courses** are stored once per department (HIST 123 and AMST 123 are the same class).
+Search shows one card per class, under the department being filtered or typed (`src/lib/crossListing.ts`),
+and adding it adds only that listing. Once one listing is on the schedule, the others leave the results
+and can't be added.
 
 **Prerequisites/corequisites** (`courses.prerequisites`, `courses.corequisites`) are the text from
 each course's public catalogue page, collected by the local data tools and shown for reading only:
