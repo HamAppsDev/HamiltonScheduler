@@ -10,8 +10,6 @@ export const TYPE_FILTERS = [
   { id: 'writing', label: 'Writing Intensive', types: ['Writing Intensive Courses'] },
   { id: 'speaking', label: 'Speaking Intensive', types: ['Speaking Intensive Course'] },
   { id: 'quant', label: 'Quantitative', types: ['Quantitative & Symbolic R'] },
-  { id: 'social', label: 'Social Structures', types: ['Soc, Struct & Inst Hier'] },
-  { id: 'diversity', label: 'Diversity', types: ['Cultural Diversity Course', 'Diversity Course'] },
   { id: 'proseminar', label: 'Proseminar', types: ['Proseminar'] },
   { id: 'firstyear', label: 'First Year', types: ['First Year Courses'] },
   { id: 'pe', label: 'Phys Ed', types: ['Physical Education Course'] },
@@ -51,20 +49,27 @@ export type Level = (typeof LEVELS)[number]
 
 export interface SearchFilters {
   types: TypeFilters
-  daysOff: ReadonlySet<DayLetter> // no meeting on these days
+  days: ReadonlySet<DayLetter> // only classes that meet on these days (and no others)
   startAfter: number | null // minutes after midnight: every meeting starts at or after this
   endBy: number | null // every meeting ends at or before this
   levels: ReadonlySet<Level> // course number level (any of these)
-  noPrereqs: boolean // only courses with no prerequisites listed
+  noConflicts: boolean // hide classes that clash with the schedule (checked in Sidebar, which knows the schedule)
+  subjects: ReadonlySet<string> // subject codes ("BIO"); a course matches by its own or a cross-listed code
+  professors: ReadonlySet<string> // instructor names; a section matches if any of them teaches it
 }
 
 export const NO_FILTERS: SearchFilters = {
-  types: new Map(), daysOff: new Set(), startAfter: null, endBy: null, levels: new Set(), noPrereqs: false,
+  types: new Map(), days: new Set(), startAfter: null, endBy: null, levels: new Set(), noConflicts: false,
+  subjects: new Set(), professors: new Set(),
 }
 
-/** How many filters are on (for the button's badge). */
+/**
+ * How many panel filters are on. "No conflicts" isn't counted: it also has its own Show All / No
+ * Conflicts tabs at the top of the sidebar, and on its own it doesn't list every course.
+ */
 export function activeCount(f: SearchFilters): number {
-  return f.types.size + f.daysOff.size + (f.startAfter != null ? 1 : 0) + (f.endBy != null ? 1 : 0) + f.levels.size + (f.noPrereqs ? 1 : 0)
+  return f.types.size + (f.days.size ? 1 : 0) + (f.startAfter != null ? 1 : 0) + (f.endBy != null ? 1 : 0) + f.levels.size
+    + f.subjects.size + f.professors.size
 }
 
 /** "CHEM 190L" -> "100"; 400-, 500-level… -> "400". */
@@ -74,11 +79,25 @@ export function levelOf(code: string): Level | null {
   return d >= '4' ? '400' : (`${d}00` as Level)
 }
 
-/** Course-wide filters: level and prerequisites. */
-export function matchesCourse(c: Pick<Course, 'code' | 'prerequisites'>, f: SearchFilters): boolean {
+/** "AFRST 146W" -> "AFRST" */
+export const subjectOf = (code: string) => code.split(' ')[0]
+
+/** Course-wide filters: level and subject (its own code or any cross-listed one). */
+export function matchesCourse(c: Pick<Course, 'code'> & Partial<Pick<Course, 'cross_listed'>>, f: SearchFilters): boolean {
   if (f.levels.size && !f.levels.has(levelOf(c.code) as Level)) return false
-  if (f.noPrereqs && c.prerequisites) return false
+  if (f.subjects.size && ![c.code, ...(c.cross_listed ?? [])].some((x) => f.subjects.has(subjectOf(x)))) return false
   return true
+}
+
+/** Professor filter for one section. */
+export function matchesProfessor(s: Pick<Section, 'instructors'>, f: SearchFilters): boolean {
+  return !f.professors.size || s.instructors.some((i) => f.professors.has(i))
+}
+
+/** "Tara M. Holman" -> "Holman, Tara M." (for the alphabetical professor list). */
+export function lastFirst(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  return parts.length < 2 ? name : `${parts[parts.length - 1]}, ${parts.slice(0, -1).join(' ')}`
 }
 
 /**
@@ -86,9 +105,9 @@ export function matchesCourse(c: Pick<Course, 'code' | 'prerequisites'>, f: Sear
  * time (independent study, TBA) always passes.
  */
 export function matchesWhen(s: Parameters<typeof meetingsOf>[0], f: SearchFilters): boolean {
-  if (!f.daysOff.size && f.startAfter == null && f.endBy == null) return true
+  if (!f.days.size && f.startAfter == null && f.endBy == null) return true
   return meetingsOf(s).filter((m) => m.type !== 'FINAL').every((m) =>
-    !parseDays(m.days).some((d) => f.daysOff.has(d))
+    (!f.days.size || parseDays(m.days).every((d) => f.days.has(d)))
     && (f.startAfter == null || toMinutes(m.start_time) >= f.startAfter)
     && (f.endBy == null || toMinutes(m.end_time) <= f.endBy))
 }

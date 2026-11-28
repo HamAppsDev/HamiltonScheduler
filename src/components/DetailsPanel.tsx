@@ -2,9 +2,11 @@ import { useEffect } from 'react'
 import { formatTime, meetingsOf, parseDays, sectionsConflict } from '../lib/time'
 import type { Course, SectionWithCourse } from '../lib/types'
 import Requisite from './Requisite'
+import { ASK_THE_PROFESSOR, describeYears, openToMe, openToYears, type ClassYear } from '../lib/classYear'
 
 interface Props {
   section: SectionWithCourse
+  classYear: ClassYear | null
   labs: Course[] // lab courses that go with this class
   inSchedule: boolean
   conflicts: SectionWithCourse[] // other sections currently on the calendar
@@ -14,7 +16,7 @@ interface Props {
   onClose: () => void
 }
 
-export default function DetailsPanel({ section: s, labs, inSchedule, conflicts, canAdd, onToggle, onSearch, onClose }: Props) {
+export default function DetailsPanel({ section: s, classYear, labs, inSchedule, conflicts, canAdd, onToggle, onSearch, onClose }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
@@ -58,7 +60,17 @@ export default function DetailsPanel({ section: s, labs, inSchedule, conflicts, 
           <p className="warn">Conflicts with {clashes.map((o) => `${o.course.code}-${o.section}`).join(', ')}.</p>
         )}
         {s.comments && <p className="warn">{s.comments}</p>}
-        {c.description && <p className="desc">{c.description}</p>}
+        {!openToMe(s.comments, classYear) && (
+          <p className="warn year-note">
+            This section is open to {describeYears(openToYears(s.comments)!)} only. {ASK_THE_PROFESSOR}
+          </p>
+        )}
+        {c.description && (
+          <section aria-labelledby="details-desc">
+            <h3 id="details-desc" className="details-heading">Course description</h3>
+            <p className="desc">{c.description}</p>
+          </section>
+        )}
         {c.catalog_url && <p><a href={c.catalog_url} target="_blank" rel="noreferrer">View in course catalog ↗</a></p>}
 
         <button

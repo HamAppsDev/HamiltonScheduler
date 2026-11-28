@@ -85,8 +85,9 @@ Each section has `types`: the course types from Self-Service. Labels are Self-Se
 
 Types are per **section** (e.g. only one MATH 113 section is first-years only), so filters keep the
 sections that match (`src/components/Sidebar.tsx`, the `results` list).
-Day/time (`matchesWhen`: days off, start after, end by; final exams ignored, sections with no set time pass),
-level and "no prerequisites listed" (`matchesCourse`) are in the same file; a new kind of filter goes there,
+Day/time (`matchesWhen`: only the chosen days, start after, end by; final exams ignored, sections with no set
+time pass) and level (`matchesCourse`) are in the same file; "hide classes that conflict with my schedule" is
+checked in `Sidebar.tsx`, which knows the schedule. A new kind of filter goes in `filters.ts`,
 in `SearchFilters`, and gets a control in the panel and a label in `FilterSummary`.
 
 Keep Self-Service's labels in the database and put friendly names in `label`, so the next catalog
@@ -100,6 +101,12 @@ lab with the class of the same code minus the "L", or with every lettered class 
 they share one (BIO 100L goes with BIO 100B, BIO 100P, …). Search shows the lab inside its class's
 card; adding the class asks for a class time, then a lab time, on the calendar (a step with one choice
 is filled in), and saves nothing until both are picked. Class and lab share one saved card and color.
+
+**Class year** ("My class year" in the Filters panel, remembered on the device) comes from each section's
+note ("Open to Srs., Jrs. & Sophomores", "Open to First Years only"): `src/lib/classYear.ts` reads the common
+phrasings and ignores "Not open to …" and "by permission". Search hides courses with no section open to the
+student's year, section picking leaves those sections out, and each place says so with a tip to email the
+professor. A section whose note states no year limit is open to everyone.
 
 **Prerequisites/corequisites** (`courses.prerequisites`, `courses.corequisites`) are the text from
 each course's public catalogue page, collected by the local data tools and shown for reading only:

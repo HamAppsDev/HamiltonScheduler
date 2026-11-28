@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { buildIcs, downloadIcs } from '../lib/ics'
 import { indexLabs, isLabCourse } from '../lib/labs'
+import { ASK_THE_PROFESSOR, CLASS_YEARS, openToMe, type ClassYear } from '../lib/classYear'
 import { applyMode, applyPaletteUi, initialMode, loadPref, PALETTES, savePref, type Mode } from '../lib/theme'
 import { MAX_SCHEDULES_PER_TERM, type Course, type Schedule, type SectionWithCourse, type Term } from '../lib/types'
 import Header from './Header'
@@ -24,6 +25,22 @@ export default function Planner() {
   const [pickCourseId, setPickCourseId] = useState<number | null>(null) // choosing another section of this course
   const [adding, setAdding] = useState<Adding | null>(null) // adding a course: choosing its section (then lab) first
   const [query, setQuery] = useState('')
+  // The student's class year (remembered on this device): sections not open to it are left out of picking.
+  const [classYear, setClassYearState] = useState<ClassYear | null>(() => {
+    const v = loadPref('hs-class-year')
+    return CLASS_YEARS.some((y) => y.id === v) ? (v as ClassYear) : null
+  })
+  const setClassYear = (y: ClassYear | null) => { setClassYearState(y); savePref('hs-class-year', y ?? '') }
+  const choices = (c: Course) => choicesOf(c, classYear)
+  const yearPlural = CLASS_YEARS.find((y) => y.id === classYear)?.plural
+  /** Class-year note for the pick bar: sections left out, or none open to this year at all. */
+  const yearNote = (c: Course) => {
+    if (!classYear) return null
+    const notMine = choicesOf(c).filter((s) => !openToMe(s.comments, classYear)).length
+    if (!notMine) return null
+    const noneOpen = choices(c).every((s) => !openToMe(s.comments, classYear))
+    return <YearNote count={notMine} plural={yearPlural!} noneOpen={noneOpen} />
+  }
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>(initialMode)
@@ -136,12 +153,12 @@ export default function Planner() {
   // Faded blocks: the choices while adding a course, else the other sections of the course
   // being switched, else the hovered search result (with its lab).
   const preview = useMemo(() => {
-    const open = (c: Course, skip: number[] = []) => choicesOf(c).filter((s) => !skip.includes(s.id)).map((s) => ({ ...s, course: c }))
+    const open = (c: Course, skip: number[] = []) => choices(c).filter((s) => !skip.includes(s.id)).map((s) => ({ ...s, course: c }))
     if (addingCourse) return open(addingCourse)
     if (pickCourse) return open(pickCourse, sectionIds)
     if (!previewCourse) return []
     return [previewCourse, ...(labs.labsOf.get(previewCourse.id) ?? [])].flatMap((c) => open(c))
-  }, [addingCourse, pickCourse, previewCourse, sectionIds, labs])
+  }, [addingCourse, pickCourse, previewCourse, sectionIds, labs, classYear])
 
   // Esc cancels adding (nothing is saved) or leaves section-switching mode.
   useEffect(() => {
@@ -181,17 +198,17 @@ export default function Planner() {
    * `sectionId` skips the first step when a specific section was chosen (from Details).
    */
   function addCourse(course: Course, sectionId?: number) {
-    if (!choicesOf(course).length) return setNotice(`${course.code} has no sections this semester.`)
+    if (!choices(course).length) return setNotice(`${course.code} has no sections this semester.`)
     setPickCourseId(null); setPreviewCourse(null)
     const onSchedule = (c: Course) => c.sections.some((s) => sectionIds.includes(s.id))
-    const labSteps = (labs.labsOf.get(course.id) ?? []).filter((l) => choicesOf(l).length && !onSchedule(l))
+    const labSteps = (labs.labsOf.get(course.id) ?? []).filter((l) => choices(l).length && !onSchedule(l))
     advance({ steps: [course, ...labSteps], step: sectionId ? 1 : 0, picked: sectionId ? [sectionId] : [] })
   }
   /** Fill in single-choice steps; save once every step is chosen, else wait for the student. */
   function advance(a: Adding) {
     let { step } = a
     const picked = [...a.picked]
-    while (step < a.steps.length && choicesOf(a.steps[step]).length === 1) picked.push(choicesOf(a.steps[step++])[0].id)
+    while (step < a.steps.length && choices(a.steps[step]).length === 1) picked.push(choices(a.steps[step++])[0].id)
     if (step < a.steps.length) return setAdding({ ...a, step, picked })
     setAdding(null)
     const ids = picked.filter((id) => !sectionIds.includes(id))
@@ -319,6 +336,8 @@ export default function Planner() {
           scheduled={scheduled}
           canEdit={!!scheduleId}
           canExport={canExport}
+          classYear={classYear}
+          onClassYear={setClassYear}
           onAdd={addCourse}
           onRemove={removeCourse}
           onDetails={setDetailId}
@@ -338,11 +357,13 @@ export default function Planner() {
                 ? <span>Now pick a lab time for <strong>{adding.steps[0].code}</strong> ({addingCourse.code}, {preview.length} options).</span>
                 : <span>Pick a section of <strong>{addingCourse.code}</strong> on the calendar ({preview.length} options).</span>}
               <button className="link" onClick={() => setAdding(null)}>Cancel</button>
+              {yearNote(addingCourse)}
             </div>
           ) : pickCourse && (
             <div className="pick-bar" role="status">
               Pick a section of <strong>{pickCourse.code}</strong> ({preview.length} other{preview.length === 1 ? '' : 's'}) — click the current one for details, or press Esc.
               <button className="link" onClick={() => setPickCourseId(null)}>Done</button>
+              {yearNote(pickCourse)}
             </div>
           )}
         />
@@ -351,6 +372,7 @@ export default function Planner() {
       {detail && (
         <DetailsPanel
           section={detail}
+          classYear={classYear}
           labs={labs.labsOf.get(detail.course.id) ?? []}
           onSearch={(q) => { setDetailId(null); setQuery(q) }}
           inSchedule={sectionIds.includes(detail.id)}
@@ -375,7 +397,22 @@ export default function Planner() {
 /** Adding a course: its steps (the class, then labs), which one is being chosen, and sections chosen so far. */
 interface Adding { steps: Course[]; step: number; picked: number[] }
 
-/** Sections a student can choose (canceled ones are hidden). */
-function choicesOf(c: Course) {
-  return c.sections.filter((s) => s.status !== 'canceled')
+/** "2 sections not open to sophomores aren't shown." plus the ask-the-professor tip, in the pick bar. */
+function YearNote({ count, plural, noneOpen }: { count: number; plural: string; noneOpen: boolean }) {
+  return (
+    <span className="year-note">
+      {noneOpen ? `None of these sections are open to ${plural}.`
+        : `${count} section${count === 1 ? '' : 's'} not open to ${plural} ${count === 1 ? "isn't" : "aren't"} shown.`} {ASK_THE_PROFESSOR}
+    </span>
+  )
+}
+
+/**
+ * Sections a student can choose: canceled ones are hidden, and with a class year, those not open to
+ * it (unless that would leave none, e.g. a course added from Details anyway).
+ */
+function choicesOf(c: Course, year: ClassYear | null = null) {
+  const all = c.sections.filter((s) => s.status !== 'canceled')
+  const mine = all.filter((s) => openToMe(s.comments, year))
+  return mine.length ? mine : all
 }
